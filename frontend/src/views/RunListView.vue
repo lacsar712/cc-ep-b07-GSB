@@ -3,7 +3,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
       <div>
         <h1 style="margin-bottom: 4px">实验 Run 列表</h1>
-        <p class="muted" style="margin-top: 0">按项目与状态筛选投影视图</p>
+        <p class="muted" style="margin-top: 0">按项目、状态与代码提交哈希筛选投影视图</p>
       </div>
       <n-button v-if="auth.role === 'researcher'" type="primary" @click="$router.push('/runs/new')">
         新建 Run
@@ -23,12 +23,39 @@
             placeholder="全部"
           />
         </n-form-item>
+        <n-form-item label="代码提交哈希" :show-feedback="false">
+          <n-input
+            v-model:value="commitSha"
+            class="mono"
+            clearable
+            placeholder="完整哈希或开头片段，例如 a1b2c3d"
+          />
+        </n-form-item>
+        <n-form-item label="哈希匹配模式" :show-feedback="false">
+          <n-radio-group v-model:value="commitShaMode" size="small">
+            <n-radio-button value="exact">精确匹配</n-radio-button>
+            <n-radio-button value="prefix">前缀匹配</n-radio-button>
+          </n-radio-group>
+        </n-form-item>
       </div>
+      <p class="muted" style="margin: 4px 0 0; font-size: 12px">
+        哈希匹配不区分大小写（输入统一按小写比较）。精确匹配：需与完整提交哈希一致；前缀匹配：命中以输入片段开头的提交。筛选在服务端完成，可与项目、状态组合；无命中时列表为空，不会退回全量列表。
+      </p>
       <n-button style="margin-top: 8px" @click="load">筛选</n-button>
     </div>
 
     <div class="card">
-      <n-data-table :columns="columns" :data="rows" :loading="loading" :bordered="false" />
+      <n-data-table :columns="columns" :data="rows" :loading="loading" :bordered="false">
+        <template #empty>
+          <n-empty description="没有匹配的 Run">
+            <template #extra>
+              <span class="muted" style="font-size: 12px">
+                当前筛选条件无命中，请调整项目 / 状态 / 提交哈希后重试
+              </span>
+            </template>
+          </n-empty>
+        </template>
+      </n-data-table>
     </div>
   </div>
 </template>
@@ -47,6 +74,8 @@ const rows = ref([])
 const loading = ref(false)
 const project = ref('')
 const status = ref(null)
+const commitSha = ref('')
+const commitShaMode = ref('exact')
 
 const statusOptions = [
   { label: '进行中', value: 'running' },
@@ -72,6 +101,14 @@ const columns = [
     },
   },
   { title: '版本', key: 'version', width: 70 },
+  {
+    title: '提交哈希',
+    key: 'code_commit_sha',
+    ellipsis: { tooltip: true },
+    render(row) {
+      return h('span', { class: 'mono' }, row.code_commit_sha)
+    },
+  },
   {
     title: '开始时间',
     key: 'started_at',
@@ -102,6 +139,12 @@ async function load() {
     const params = {}
     if (project.value.trim()) params.project = project.value.trim()
     if (status.value) params.status = status.value
+    const sha = commitSha.value.trim()
+    if (sha) {
+      params.commit_sha = sha
+      params.commit_sha_mode = commitShaMode.value
+    }
+    // 服务端过滤：无命中时返回空数组，列表保持空态，不回退全表
     rows.value = await listRuns(params)
   } catch (e) {
     message.error(e.message || '加载失败')

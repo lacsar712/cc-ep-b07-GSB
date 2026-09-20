@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.models import EventStore, RunProjection
 
 
 TERMINAL_STATUSES = {"completed", "aborted"}
+COMMIT_SHA_MODES = {"exact", "prefix"}
 
 
 class DomainError(Exception):
@@ -306,6 +307,37 @@ def list_events(db: Session, run_id: UUID) -> list[EventStore]:
         .where(EventStore.aggregate_id == run_id)
         .order_by(EventStore.version.asc())
     )
+    return list(db.scalars(stmt).all())
+
+
+def list_runs(
+    db: Session,
+    *,
+    project: str | None = None,
+    status: str | None = None,
+    commit_sha: str | None = None,
+    commit_sha_mode: str = "exact",
+) -> list[RunProjection]:
+    """查询侧 Run 列表过滤。commit_sha 不区分大小写（统一按小写比较）：
+
+    - commit_sha_mode="exact"：与完整提交哈希精确相等；
+    - commit_sha_mode="prefix"：提交哈希以输入片段开头。
+    无命中时返回空列表，不回退到全表。
+    """
+    stmt = select(RunProjection).order_by(RunProjection.started_at.desc())
+    if project:
+        stmt = stmt.where(RunProjection.project == project)
+    if status:
+        stmt = stmt.where(RunProjection.status == status)
+    if commit_sha and commit_sha.strip():
+        if commit_sha_mode not in COMMIT_SHA_MODES:
+            raise DomainError(f"无效的提交哈希匹配模式: {commit_sha_mode}")
+        sha = commit_sha.strip().lower()
+        col = func.lower(RunProjection.code_commit_sha)
+        if commit_sha_mode == "prefix":
+            stmt = stmt.where(col.startswith(sha, autoescape=True))
+        else:
+            stmt = stmt.where(col == sha)
     return list(db.scalars(stmt).all())
 
 

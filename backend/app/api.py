@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_access_token, get_current_user, require_researcher
@@ -12,6 +11,7 @@ from app.cqrs import (
     attach_artifact,
     complete_run,
     list_events,
+    list_runs,
     record_metric,
     start_run,
 )
@@ -59,15 +59,21 @@ def login(body: LoginRequest):
 def get_runs(
     project: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    commit_sha: str | None = Query(default=None),
+    commit_sha_mode: str = Query(default="exact", pattern="^(exact|prefix)$"),
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
-    stmt = select(RunProjection).order_by(RunProjection.started_at.desc())
-    if project:
-        stmt = stmt.where(RunProjection.project == project)
-    if status:
-        stmt = stmt.where(RunProjection.status == status)
-    return list(db.scalars(stmt).all())
+    try:
+        return list_runs(
+            db,
+            project=project,
+            status=status,
+            commit_sha=commit_sha,
+            commit_sha_mode=commit_sha_mode,
+        )
+    except DomainError as exc:
+        _handle_domain(exc)
 
 
 @router.post("/runs", response_model=RunOut, status_code=201)
