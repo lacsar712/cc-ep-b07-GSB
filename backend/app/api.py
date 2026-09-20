@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,6 +33,10 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api")
 
+# 提交哈希过滤：仅十六进制字符，匹配不区分大小写（统一按小写比对，与写入侧一致）
+_COMMIT_HEX_RE = re.compile(r"^[0-9a-f]+$")
+_COMMIT_MATCH_MODES = ("exact", "prefix")
+
 
 def _handle_domain(exc: DomainError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
@@ -59,6 +64,8 @@ def login(body: LoginRequest):
 def get_runs(
     project: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    commit: str | None = Query(default=None),
+    commit_match: str = Query(default="exact"),
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
@@ -67,6 +74,24 @@ def get_runs(
         stmt = stmt.where(RunProjection.project == project)
     if status:
         stmt = stmt.where(RunProjection.status == status)
+    if commit is not None and commit.strip():
+        if commit_match not in _COMMIT_MATCH_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail="commit_match 仅支持 exact（精确匹配）或 prefix（前缀匹配）",
+            )
+        # 大小写规则：不区分大小写，输入统一转小写后按十六进制比对
+        value = commit.strip().lower()
+        if len(value) > 64 or not _COMMIT_HEX_RE.match(value):
+            raise HTTPException(
+                status_code=400,
+                detail="commit 仅接受十六进制字符（0-9、a-f，不区分大小写），最长 64 位",
+            )
+        if commit_match == "prefix":
+            stmt = stmt.where(RunProjection.code_commit_sha.startswith(value))
+        else:
+            stmt = stmt.where(RunProjection.code_commit_sha == value)
+    # 无命中时返回空列表，不回退为全表
     return list(db.scalars(stmt).all())
 
 

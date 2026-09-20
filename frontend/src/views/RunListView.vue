@@ -3,7 +3,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
       <div>
         <h1 style="margin-bottom: 4px">实验 Run 列表</h1>
-        <p class="muted" style="margin-top: 0">按项目与状态筛选投影视图</p>
+        <p class="muted" style="margin-top: 0">按项目、状态与代码提交哈希筛选投影视图</p>
       </div>
       <n-button v-if="auth.role === 'researcher'" type="primary" @click="$router.push('/runs/new')">
         新建 Run
@@ -23,12 +23,30 @@
             placeholder="全部"
           />
         </n-form-item>
+        <n-form-item label="代码提交哈希" :show-feedback="false">
+          <n-input
+            v-model:value="commit"
+            clearable
+            placeholder="完整哈希或前几位，如 a1b2c3d4"
+            @keyup.enter="load"
+          />
+        </n-form-item>
+        <n-form-item label="哈希匹配方式" :show-feedback="false">
+          <n-select v-model:value="commitMatch" :options="commitMatchOptions" />
+        </n-form-item>
       </div>
+      <p class="muted" style="margin: 4px 0 0; font-size: 12px">
+        哈希匹配不区分大小写：输入统一按小写十六进制比对。精确匹配需输入完整 40 位哈希；前缀匹配可只给前几位。
+      </p>
       <n-button style="margin-top: 8px" @click="load">筛选</n-button>
     </div>
 
     <div class="card">
-      <n-data-table :columns="columns" :data="rows" :loading="loading" :bordered="false" />
+      <n-data-table :columns="columns" :data="rows" :loading="loading" :bordered="false">
+        <template #empty>
+          <n-empty description="没有匹配的 Run，请调整筛选条件" />
+        </template>
+      </n-data-table>
     </div>
   </div>
 </template>
@@ -47,6 +65,13 @@ const rows = ref([])
 const loading = ref(false)
 const project = ref('')
 const status = ref(null)
+const commit = ref('')
+const commitMatch = ref('exact')
+
+const commitMatchOptions = [
+  { label: '精确匹配（完整哈希）', value: 'exact' },
+  { label: '前缀匹配（前几位）', value: 'prefix' },
+]
 
 const statusOptions = [
   { label: '进行中', value: 'running' },
@@ -102,6 +127,10 @@ async function load() {
     const params = {}
     if (project.value.trim()) params.project = project.value.trim()
     if (status.value) params.status = status.value
+    if (commit.value.trim()) {
+      params.commit = commit.value.trim()
+      params.commit_match = commitMatch.value
+    }
     rows.value = await listRuns(params)
   } catch (e) {
     message.error(e.message || '加载失败')

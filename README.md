@@ -64,6 +64,7 @@ pytest -q
 6. 打开「血缘」确认 code_commit、dataset 指纹、artifacts、metrics
 7. 健康检查：`GET http://localhost:8173/api/health`
 8. 用 `auditor` 登录：可看列表/事件/血缘，命令按钮不可用
+9. Run 列表支持按代码提交哈希筛选：精确匹配需完整 40 位哈希，前缀匹配可只给前几位；不区分大小写，可与项目、状态组合，无命中时列表为空并提示（不回退全表）
 
 终态或 `expected_version` 不匹配时，API 返回 **409**。
 
